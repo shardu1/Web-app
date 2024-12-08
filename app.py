@@ -1,0 +1,272 @@
+from flask import Flask, request, render_template
+from joblib import load
+import sqlite3
+import numpy as np
+
+app = Flask(__name__, static_url_path="",static_folder='assets',template_folder='templates')
+
+
+# app1 
+model1 = load(r'Functionality-1-LR.joblib')
+
+
+@app.route('/')
+def index():
+    return render_template('main_web_page.html')
+
+@app.route('/population')
+def population():
+    return render_template('population.html')
+
+@app.route('/predict_', methods=['POST'])
+def predict_():
+    try:
+        
+        year = int(request.form['year'])
+        
+        
+        input_data = np.array([[year]])
+        
+        
+        prediction = model1.predict(input_data)
+        
+        
+        return render_template('population.html', prediction=round(prediction[0]))
+    except ValueError:
+        return render_template('population.html', error="Invalid input. Please enter a valid year.")
+    
+
+# app2
+
+model2 = load(r"decision_tree_model.joblib")
+
+
+DB_FILE = 'diabetes_data.db'
+
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_data (
+            PatientID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Age INT CHECK (Age > 0 AND Age <= 13),
+            Sex TINYINT(1), 
+            BMI FLOAT CHECK (BMI > 0 AND BMI < 60),
+            Smoker TINYINT(1),
+            HighBP TINYINT(1),
+            HighChol TINYINT(1),
+            Stroke TINYINT(1),
+            HeartDiseaseorAttack TINYINT(1),
+            PhysActivity TINYINT(1),
+            HvyAlcoholConsump TINYINT(1),
+            GenHlth INT CHECK (GenHlth > 0 AND GenHlth <= 5),
+            MentHlth INT CHECK (MentHlth >= 0 AND MentHlth <= 30),
+            PhysHlth INT CHECK (PhysHlth >= 0 AND PhysHlth <= 30)
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
+init_db()
+
+
+def map_age_to_bucket(age):
+    if 18 <= age <= 24:
+        return 1
+    elif 25 <= age <= 29:
+        return 2
+    elif 30 <= age <= 34:
+        return 3
+    elif 35 <= age <= 39:
+        return 4
+    elif 40 <= age <= 44:
+        return 5
+    elif 45 <= age <= 49:
+        return 6
+    elif 50 <= age <= 54:
+        return 7
+    elif 55 <= age <= 59:
+        return 8
+    elif 60 <= age <= 64:
+        return 9
+    elif 65 <= age <= 69:
+        return 10
+    elif 70 <= age <= 74:
+        return 11
+    elif 75 <= age <= 79:
+        return 12
+    elif age >= 80:
+        return 13
+    else:
+        raise ValueError("Age should be above 18")
+
+@app.route('/lifestyle_form')
+def form_page():
+    return render_template('lifestyle_form.html')
+
+@app.route('/result_', methods=['POST'])
+def result_():
+    try:
+       
+        user_data = request.form.to_dict()
+
+       
+        encoding_map = {
+            'Sex': {'M': 0, 'F': 1},
+            'Smoker': {'No': 0, 'Yes': 1},
+            'HighBP': {'No': 0, 'Yes': 1},
+            'HighChol': {'No': 0, 'Yes': 1},
+            'Stroke': {'No': 0, 'Yes': 1},
+            'HeartDiseaseorAttack': {'No': 0, 'Yes': 1},
+            'PhysActivity': {'No': 0, 'Yes': 1},
+            'HvyAlcoholConsump': {'No': 0, 'Yes': 1}
+        }
+        
+
+        
+        user_data['Age'] = map_age_to_bucket(int(user_data['Age']))
+        for key, mapping in encoding_map.items():
+            user_data[key] = mapping.get(user_data[key], None)
+
+        features = [
+            user_data['Age'], 
+            user_data['Sex'],  
+            float(user_data['BMI']),
+            user_data['Smoker'],  
+            user_data['HighBP'],  
+            user_data['HighChol'], 
+            user_data['Stroke'],  
+            user_data['HeartDiseaseorAttack'],  
+            user_data['PhysActivity'], 
+            user_data['HvyAlcoholConsump'],  
+            float(user_data['GenHlth']),
+            float(user_data['MentHlth']),
+            float(user_data['PhysHlth'])
+        ]
+
+        
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO user_data (
+                Age, Sex, BMI, Smoker, HighBP, HighChol, Stroke,
+                HeartDiseaseorAttack, PhysActivity, HvyAlcoholConsump,
+                GenHlth, MentHlth, PhysHlth
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', features)
+        conn.commit()
+        conn.close()
+
+        
+        prediction = model2.predict([features])
+
+        
+        result = "Diabetic" if prediction[0] == 1 else "Non-Diabetic"
+        return render_template('lifestyle_result.html', result=result)
+    except (ValueError, KeyError) as e:
+        return f"Error in processing input data: {e}", 400
+    except Exception as e:
+        return f"Unexpected error: {e}", 500
+
+
+# app3
+
+
+# model3 = load(r"random_forest_model.joblib")
+
+
+# encoding_map = {
+#     'GeneticMarkers': {'Positive': 1, 'Negative': 0},
+#     'Autoantibodies': {'Positive': 1, 'Negative': 0},
+#     'FamilyHistory': {'Yes': 1, 'No': 0},
+#     'EnvironmentalFactors': {'Present': 1, 'Absent': 0},
+#     'PhysicalActivity': {'low': 0, 'moderate': 1, 'high': 2},
+#     'DietaryHabits': {'Healthy': 1, 'Unhealthy': 0},
+#     'Ethnicity': {'high risk': 1, 'low risk': 0},
+#     'SocioeconomicFactors': {'low': 0, 'moderate': 1, 'high': 2},
+#     'SmokingStatus': {'smoker': 1, 'non-smoker': 0},
+#     'AlcoholConsumption': {'low': 0, 'moderate': 1, 'high': 2},
+#     'GlucoseToleranceTest': {'normal': 0, 'abnormal': 1},
+#     'HistoryOfPCOS': {'Yes': 1, 'No': 0},
+#     'PreviousGestationalDiabetes': {'Yes': 1, 'No': 0},
+#     'PregnancyHistory': {'normal': 0, 'complicated': 1},
+#     'CysticFibrosisDiagnosis': {'Yes': 1, 'No': 0},
+#     'SteroidUseHistory': {'Yes': 1, 'No': 0},
+#     'GeneticTesting': {'Positive': 1, 'Negative': 0},
+#     'LiverFunctionTests': {'normal': 0, 'abnormal': 1},
+#     'UrineTest': {
+#         'Protein Present': 3,
+#         'Normal': 2,
+#         'Glucose Present': 1,
+#         'Ketones Present': 0
+#     },
+#     'EarlyOnsetSymptoms': {'Yes': 1, 'No': 0},
+# }
+
+# @app.route('/medical_form')
+# def medical_form():
+#     return render_template('medical_form.html')
+
+# @app.route('/result__', methods=['POST'])
+# def result__():
+#     if request.method == 'POST':
+        
+#         form_data = request.form.to_dict()
+
+        
+#         encoded_data = []
+#         for key, value in form_data.items():
+#             if key in encoding_map:
+#                 encoded_value = encoding_map[key][value]
+#                 encoded_data.append(encoded_value)
+#             else:
+                
+#                 encoded_data.append(float(value))
+
+        
+#         input_array = np.array([encoded_data])
+#         prediction = model3.predict(input_array)[0]
+
+        
+#         return render_template('medical_result.html', prediction=prediction)
+    
+
+# app4
+model4 = load(r"gestational.joblib")
+
+@app.route('/gestation_form')
+def gestation_form():
+    return render_template('gestation_form.html')
+
+@app.route('/predict', methods=['POST'])
+def predict2():
+    try:
+        # Collect inputs from form
+        age = float(request.form['age'])
+        pregnancy_no = float(request.form['pregnancy_no'])
+        weight = float(request.form['weight'])
+        height = float(request.form['height'])
+        bmi = float(request.form['bmi'])
+        heredity = float(request.form['heredity'])
+        
+        # Prepare the input for the model
+        inputs = [age, pregnancy_no, weight, height, bmi, heredity]
+        
+        # Predict using the model
+        prediction = model4.predict([inputs])[0]
+        
+        # Determine the result
+        result = "has gestational diabetes" if prediction == 1 else "does not have gestational diabetes"
+        return render_template('gestation_result.html', result=result)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+
+
